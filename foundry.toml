@@ -1,0 +1,10 @@
+[profile.default]
+src = "src"
+out = "out"
+
+[rpc_endpoints]
+lisk-sepolia = "${LISK_SEPOLIA_RPC_URL}"
+
+[etherscan]
+lisk-sepolia = {key = "empty", url = "https://sepolia-blockscout.lisk.com/api"}
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
