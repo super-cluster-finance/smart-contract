@@ -4,7 +4,7 @@
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-orange)](https://book.getfoundry.sh/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
-SuperCluster is a modular DeFi yield aggregation protocol that enables users to stake tokens, earn yield through automated strategy pilots, and receive rebasing reward tokens. The protocol routes deposits across multiple DeFi protocols (Aave, Morpho) via pluggable adapters while maintaining a unified user experience.
+SuperCluster is a modular DeFi yield aggregation protocol that enables users to stake tokens, earn yield through automated strategy pilots, and receive rebasing reward tokens. The protocol routes deposits across multiple DeFi protocols (Ionic, Morpho) via pluggable adapters while maintaining a unified user experience.
 
 ## Table of Contents
 
@@ -76,7 +76,7 @@ SuperCluster abstracts away the complexity of yield farming by:
              │                                       │
              ▼                                       ▼
 ┌────────────────────────┐              ┌────────────────────────────┐
-│    AaveAdapter.sol     │              │    MorphoAdapter.sol       │
+│    IonicAdapter.sol    │              │    MorphoAdapter.sol       │
 │  • deposit()           │              │  • deposit()               │
 │  • withdraw()          │              │  • withdraw()              │
 │  • getBalance()        │              │  • getBalance()            │
@@ -85,7 +85,7 @@ SuperCluster abstracts away the complexity of yield farming by:
              │                                       │
              ▼                                       ▼
 ┌────────────────────────┐              ┌────────────────────────────┐
-│   MockAave (Testnet)   │              │  MockMorpho (Testnet)      │
+│   MockIonic (Testnet)  │              │  MockMorpho (Testnet)      │
 └────────────────────────┘              └────────────────────────────┘
 ```
 
@@ -153,7 +153,7 @@ Base contract for protocol integrations implementing `IAdapter`.
 
 **Implementations:**
 
-- `AaveAdapter.sol` – Integration with Aave V3 lending
+- `IonicAdapter.sol` – Integration with Ionic (Compound V2 fork) lending
 - `MorphoAdapter.sol` – Integration with Morpho lending markets
 
 ---
@@ -352,9 +352,9 @@ forge script script/SuperCluster.s.sol:SuperClusterScript \
 1. `MockOracle` & `MockIrm` – Price feed and interest rate model
 2. `MockUSDC` – Base token (testnet)
 3. `SuperCluster` – Main protocol (auto-deploys SToken, WsToken, WithdrawManager)
-4. `LendingPool` (MockAave) – Mock Aave protocol
+4. `LendingPool` (MockIonic) – Mock Ionic protocol
 5. `MockMorpho` – Mock Morpho protocol
-6. `AaveAdapter` – Aave integration adapter
+6. `IonicAdapter` – Ionic integration adapter
 7. `MorphoAdapter` – Morpho integration adapter
 8. `Pilot` – Strategy manager
 9. `Faucet` – Testnet token distribution
@@ -415,7 +415,7 @@ sc-super-cluster/
 │   ├── SuperCluster.sol          # Main protocol entry point
 │   ├── adapter/
 │   │   ├── Adapter.sol           # Abstract base adapter
-│   │   ├── AaveAdapter.sol       # Aave V3 integration
+│   │   ├── IonicAdapter.sol      # Ionic (Compound V2 fork) integration
 │   │   └── MorphoAdapter.sol     # Morpho integration
 │   ├── interfaces/
 │   │   ├── IAdapter.sol          # Adapter interface
@@ -423,7 +423,7 @@ sc-super-cluster/
 │   │   ├── ISToken.sol           # SToken interface
 │   │   └── IMockMorpho.sol       # Morpho interface
 │   ├── mocks/
-│   │   ├── MockAave.sol          # Mock Aave LendingPool
+│   │   ├── MockIonic.sol         # Mock Ionic LendingPool
 │   │   ├── MockMorpho.sol        # Mock Morpho protocol
 │   │   ├── MockOracle.sol        # Mock price oracle
 │   │   ├── MockIrm.sol           # Mock interest rate model
