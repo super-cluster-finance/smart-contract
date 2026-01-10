@@ -5,8 +5,8 @@ import {Script, console} from "forge-std/Script.sol";
 import {MockUSDC} from "../src/mocks/tokens/MockUSDC.sol";
 import {SuperCluster} from "../src/SuperCluster.sol";
 import {MockMorpho} from "../src/mocks/MockMorpho.sol";
-import {LendingPool} from "../src/mocks/MockAave.sol";
-import {AaveAdapter} from "../src/adapter/AaveAdapter.sol";
+import {LendingPool} from "../src/mocks/MockIonic.sol";
+import {IonicAdapter} from "../src/adapter/IonicAdapter.sol";
 import {MorphoAdapter} from "../src/adapter/MorphoAdapter.sol";
 import {Pilot} from "../src/pilot/Pilot.sol";
 import {MarketParams} from "../src/mocks/MockMorpho.sol";
@@ -48,9 +48,9 @@ contract SuperClusterScript is Script {
 
         console.log("=== Mock Lending Protocol ===");
 
-        console.log("=== Aave Smart Contracts ===");
-        LendingPool mockAave = new LendingPool(address(base), address(base), address(mockOracle), lltv);
-        console.log("MockAave LendingPool deployed at:", address(mockAave));
+        console.log("=== Ionic Smart Contracts ===");
+        LendingPool mockIonic = new LendingPool(address(base), address(base), address(mockOracle), lltv);
+        console.log("MockIonic LendingPool deployed at:", address(mockIonic));
 
         console.log("=== Morpho Smart Morpho ===");
         MockMorpho mockMorpho = new MockMorpho();
@@ -64,9 +64,9 @@ contract SuperClusterScript is Script {
 
         console.log("=== ADAPTER ===");
 
-        console.log("=== Aave Adapter Smart Contracts ===");
-        AaveAdapter aaveAdapter = new AaveAdapter(address(base), address(mockAave), "Aave V3", "Conservative Lending");
-        console.log("AaveAdapter deployed at:", address(aaveAdapter));
+        console.log("=== Ionic Adapter Smart Contracts ===");
+        IonicAdapter ionicAdapter = new IonicAdapter(address(base), address(mockIonic), "Ionic", "Conservative Lending");
+        console.log("IonicAdapter deployed at:", address(ionicAdapter));
 
         console.log("=== Morpho Adapter Smart Contracts ===");
         MorphoAdapter morphoAdapter =
@@ -85,8 +85,8 @@ contract SuperClusterScript is Script {
         address[] memory adapters = new address[](2);
         uint256[] memory allocations = new uint256[](2);
 
-        adapters[0] = address(aaveAdapter);
-        allocations[0] = 6000; // 60% Aave
+        adapters[0] = address(ionicAdapter);
+        allocations[0] = 6000; // 60% Ionic
 
         adapters[1] = address(morphoAdapter);
         allocations[1] = 4000; // 40% Morpho

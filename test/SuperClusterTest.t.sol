@@ -6,9 +6,9 @@ import {SuperCluster} from "../src/SuperCluster.sol";
 import {SToken} from "../src/tokens/SToken.sol";
 import {WsToken} from "../src/tokens/WsToken.sol";
 import {Pilot} from "../src/pilot/Pilot.sol";
-import {AaveAdapter} from "../src/adapter/AaveAdapter.sol";
+import {IonicAdapter} from "../src/adapter/IonicAdapter.sol";
 import {MorphoAdapter} from "../src/adapter/MorphoAdapter.sol";
-import {LendingPool} from "../src/mocks/MockAave.sol";
+import {LendingPool} from "../src/mocks/MockIonic.sol";
 import {MockMorpho} from "../src/mocks/MockMorpho.sol";
 import {MockIDRX} from "../src/mocks/tokens/MockIDRX.sol";
 import {MarketParams} from "../src/mocks/interfaces/IMorpho.sol";
@@ -22,9 +22,9 @@ contract SuperClusterTest is Test {
     WsToken public wsToken;
     MockIDRX public idrx;
     Pilot public pilot;
-    AaveAdapter public aaveAdapter;
+    IonicAdapter public ionicAdapter;
     MorphoAdapter public morphoAdapter;
-    LendingPool public mockAave;
+    LendingPool public mockIonic;
     MockMorpho public mockMorpho;
 
     address public owner;
@@ -73,7 +73,7 @@ contract SuperClusterTest is Test {
     }
 
     function _deployMockProtocols(address _mockIrm, address _mockOracle, uint256 _ltv) internal {
-        mockAave = new LendingPool(address(idrx), address(idrx), address(_mockOracle), _ltv);
+        mockIonic = new LendingPool(address(idrx), address(idrx), address(_mockOracle), _ltv);
 
         // Deploy MockMorpho
         mockMorpho = new MockMorpho();
@@ -94,8 +94,8 @@ contract SuperClusterTest is Test {
     }
 
     function _deployAdapters(address _mockIrm, address _mockOracle, uint256 _ltv) internal {
-        // Deploy AaveAdapter
-        aaveAdapter = new AaveAdapter(address(idrx), address(mockAave), "Aave V3", "Conservative Lending");
+        // Deploy IonicAdapter
+        ionicAdapter = new IonicAdapter(address(idrx), address(mockIonic), "Ionic", "Conservative Lending");
 
         // Deploy MorphoAdapter
         MarketParams memory params = MarketParams({
@@ -123,9 +123,9 @@ contract SuperClusterTest is Test {
         address[] memory adapters = new address[](2);
         uint256[] memory allocations = new uint256[](2);
 
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         adapters[1] = address(morphoAdapter);
-        allocations[0] = 6000; // 60% Aave
+        allocations[0] = 6000; // 60% Ionic
         allocations[1] = 4000; // 40% Morpho
 
         pilot.setPilotStrategy(adapters, allocations);
@@ -317,7 +317,7 @@ contract SuperClusterTest is Test {
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
 
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         allocations[0] = 10000; // 100%
 
         pilot.setPilotStrategy(adapters, allocations);
@@ -326,7 +326,7 @@ contract SuperClusterTest is Test {
 
         assertEq(returnedAdapters.length, 1);
         assertEq(returnedAllocations.length, 1);
-        assertEq(returnedAdapters[0], address(aaveAdapter));
+        assertEq(returnedAdapters[0], address(ionicAdapter));
         assertEq(returnedAllocations[0], 10000);
     }
 
@@ -337,17 +337,17 @@ contract SuperClusterTest is Test {
 
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         allocations[0] = 10000;
 
         // Fund adapter with tokens first
-        status = idrx.transfer(address(aaveAdapter), DEPOSIT_AMOUNT);
+        status = idrx.transfer(address(ionicAdapter), DEPOSIT_AMOUNT);
         require(status, "Transfer failed");
 
         pilot.invest(DEPOSIT_AMOUNT, adapters, allocations);
 
         // Check if adapter received tokens
-        assertTrue(aaveAdapter.getBalance() > 0);
+        assertTrue(ionicAdapter.getBalance() > 0);
     }
 
     function test_Pilot_GetTotalValue() public {
@@ -365,45 +365,45 @@ contract SuperClusterTest is Test {
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
 
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         allocations[0] = 5000; // Only 50%, should fail
 
         vm.expectRevert();
         pilot.setPilotStrategy(adapters, allocations);
     }
 
-    // ==================== AAVE ADAPTER TESTS ====================
+    // ==================== IONIC ADAPTER TESTS ====================
 
-    function test_AaveAdapter_InitialState() public view {
-        assertEq(aaveAdapter.getProtocolName(), "Aave V3");
-        assertEq(aaveAdapter.getPilotStrategy(), "Conservative Lending");
-        assertEq(address(aaveAdapter.LENDINGPOOL()), address(mockAave));
-        assertTrue(aaveAdapter.isActive());
+    function test_IonicAdapter_InitialState() public view {
+        assertEq(ionicAdapter.getProtocolName(), "Ionic");
+        assertEq(ionicAdapter.getPilotStrategy(), "Conservative Lending");
+        assertEq(address(ionicAdapter.LENDINGPOOL()), address(mockIonic));
+        assertTrue(ionicAdapter.isActive());
     }
 
-    function test_AaveAdapter_Deposit() public {
+    function test_IonicAdapter_Deposit() public {
         uint256 depositAmount = 1000e18;
 
-        idrx.approve(address(aaveAdapter), depositAmount);
+        idrx.approve(address(ionicAdapter), depositAmount);
 
-        uint256 shares = aaveAdapter.deposit(depositAmount);
+        uint256 shares = ionicAdapter.deposit(depositAmount);
 
         assertGt(shares, 0);
-        assertGt(aaveAdapter.getBalance(), 0);
-        assertEq(aaveAdapter.totalDeposited(), depositAmount);
+        assertGt(ionicAdapter.getBalance(), 0);
+        assertEq(ionicAdapter.totalDeposited(), depositAmount);
     }
 
-    function test_AaveAdapter_Withdraw() public {
+    function test_IonicAdapter_Withdraw() public {
         uint256 depositAmount = 1000e18;
 
         // First deposit
-        idrx.approve(address(aaveAdapter), depositAmount);
-        uint256 shares = aaveAdapter.deposit(depositAmount);
+        idrx.approve(address(ionicAdapter), depositAmount);
+        uint256 shares = ionicAdapter.deposit(depositAmount);
 
         uint256 balanceBefore = idrx.balanceOf(address(this));
 
         // Withdraw
-        uint256 withdrawn = aaveAdapter.withdraw(shares);
+        uint256 withdrawn = ionicAdapter.withdraw(shares);
 
         uint256 balanceAfter = idrx.balanceOf(address(this));
 
@@ -411,24 +411,24 @@ contract SuperClusterTest is Test {
         assertGt(balanceAfter, balanceBefore);
     }
 
-    function test_AaveAdapter_ConvertToShares() public view {
+    function test_IonicAdapter_ConvertToShares() public view {
         uint256 assets = 1000e18;
-        uint256 shares = aaveAdapter.convertToShares(assets);
+        uint256 shares = ionicAdapter.convertToShares(assets);
 
         // Should be 1:1 initially
         assertEq(shares, assets);
     }
 
-    function test_Fail_AaveAdapter_DepositZero() public {
-        idrx.approve(address(aaveAdapter), 0);
+    function test_Fail_IonicAdapter_DepositZero() public {
+        idrx.approve(address(ionicAdapter), 0);
         vm.expectRevert();
-        aaveAdapter.deposit(0);
+        ionicAdapter.deposit(0);
     }
 
-    function test_Fail_AaveAdapter_WithdrawExcessive() public {
-        idrx.approve(address(aaveAdapter), 0);
+    function test_Fail_IonicAdapter_WithdrawExcessive() public {
+        idrx.approve(address(ionicAdapter), 0);
         vm.expectRevert();
-        aaveAdapter.withdraw(1000e18); // No deposits made
+        ionicAdapter.withdraw(1000e18); // No deposits made
     }
 
     // ==================== MORPHO ADAPTER TESTS ====================

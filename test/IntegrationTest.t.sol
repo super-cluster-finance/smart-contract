@@ -18,13 +18,13 @@ contract IntegrationTest is SuperClusterTest {
         vm.stopPrank();
 
         // Check adapter balances
-        uint256 aaveBalance = aaveAdapter.getBalance();
+        uint256 ionicBalance = ionicAdapter.getBalance();
         uint256 morphoBalance = morphoAdapter.getBalance();
 
-        assertGt(aaveBalance, 0);
+        assertGt(ionicBalance, 0);
         assertGt(morphoBalance, 0);
         console.log("Pilot invested in adapters");
-        console.log("Aave balance:", aaveBalance);
+        console.log("Ionic balance:", ionicBalance);
         console.log("Morpho balance:", morphoBalance);
 
         // Check total AUM calculation
@@ -179,9 +179,9 @@ contract IntegrationTest is SuperClusterTest {
         // Set up initial strategy
         address[] memory adapters = new address[](2);
         uint256[] memory allocations = new uint256[](2);
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         adapters[1] = address(morphoAdapter);
-        allocations[0] = 7000; // 70% Aave
+        allocations[0] = 7000; // 70% Ionic
         allocations[1] = 3000; // 30% Morpho
 
         pilot.setPilotStrategy(adapters, allocations);
@@ -194,21 +194,21 @@ contract IntegrationTest is SuperClusterTest {
         pilot.invest(DEPOSIT_AMOUNT, adapters, allocations);
 
         // Check allocation
-        uint256 aaveBalance = aaveAdapter.getBalance();
+        uint256 ionicBalance = ionicAdapter.getBalance();
         uint256 morphoBalance = morphoAdapter.getBalance();
 
-        uint256 expectedAave = (DEPOSIT_AMOUNT * 7000) / 10000;
+        uint256 expectedIonic = (DEPOSIT_AMOUNT * 7000) / 10000;
         uint256 expectedMorpho = (DEPOSIT_AMOUNT * 3000) / 10000;
 
-        assertApproxEqRel(aaveBalance, expectedAave, 1e16); // 1% tolerance
+        assertApproxEqRel(ionicBalance, expectedIonic, 1e16); // 1% tolerance
         assertApproxEqRel(morphoBalance, expectedMorpho, 1e16);
 
         console.log("Strategy allocation working correctly");
-        console.log("Expected Aave:", expectedAave, "Actual:", aaveBalance);
+        console.log("Expected Ionic:", expectedIonic, "Actual:", ionicBalance);
         console.log("Expected Morpho:", expectedMorpho, "Actual:", morphoBalance);
 
         // Test strategy update
-        allocations[0] = 5000; // 50% Aave
+        allocations[0] = 5000; // 50% Ionic
         allocations[1] = 5000; // 50% Morpho
 
         pilot.setPilotStrategy(adapters, allocations);
@@ -225,17 +225,17 @@ contract IntegrationTest is SuperClusterTest {
 
         uint256 depositAmount = 1000e18;
 
-        // Test Aave Adapter
-        idrx.approve(address(aaveAdapter), depositAmount);
-        uint256 aaveShares = aaveAdapter.deposit(depositAmount);
+        // Test Ionic Adapter
+        idrx.approve(address(ionicAdapter), depositAmount);
+        uint256 ionicShares = ionicAdapter.deposit(depositAmount);
 
-        uint256 aaveBalance = aaveAdapter.getBalance();
-        assertGt(aaveBalance, 0);
-        console.log("AaveAdapter deposit successful, balance:", aaveBalance);
+        uint256 ionicBalance = ionicAdapter.getBalance();
+        assertGt(ionicBalance, 0);
+        console.log("IonicAdapter deposit successful, balance:", ionicBalance);
 
         // Test conversion functions
-        uint256 convertedShares = aaveAdapter.convertToShares(depositAmount);
-        uint256 convertedAssets = aaveAdapter.convertToAssets(aaveShares);
+        uint256 convertedShares = ionicAdapter.convertToShares(depositAmount);
+        uint256 convertedAssets = ionicAdapter.convertToAssets(ionicShares);
 
         console.log("Converted shares:", convertedShares);
         console.log("Converted assets:", convertedAssets);
@@ -249,14 +249,14 @@ contract IntegrationTest is SuperClusterTest {
         console.log("MorphoAdapter deposit successful, balance:", morphoBalance);
 
         // Test withdrawals
-        uint256 withdrawnAave = aaveAdapter.withdraw(aaveShares);
+        uint256 withdrawnIonic = ionicAdapter.withdraw(ionicShares);
         uint256 withdrawnMorpho = morphoAdapter.withdraw(morphoShares);
 
-        assertGt(withdrawnAave, 0);
+        assertGt(withdrawnIonic, 0);
         assertGt(withdrawnMorpho, 0);
 
         console.log("Withdrawals successful");
-        console.log("Withdrawn from Aave:", withdrawnAave);
+        console.log("Withdrawn from Ionic:", withdrawnIonic);
         console.log("Withdrawn from Morpho:", withdrawnMorpho);
     }
 
@@ -279,15 +279,15 @@ contract IntegrationTest is SuperClusterTest {
 
         // Test Adapter errors
         vm.expectRevert();
-        aaveAdapter.deposit(0);
+        ionicAdapter.deposit(0);
 
         vm.expectRevert();
-        aaveAdapter.withdraw(1000e18); // No balance
+        ionicAdapter.withdraw(1000e18); // No balance
 
         // Test Pilot errors
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
-        adapters[0] = address(aaveAdapter);
+        adapters[0] = address(ionicAdapter);
         allocations[0] = 5000; // Invalid: not 100%
 
         vm.expectRevert();
@@ -451,13 +451,13 @@ contract IntegrationTest is SuperClusterTest {
         vm.stopPrank();
 
         // Check adapter balances
-        uint256 aaveBalance = aaveAdapter.getBalance();
+        uint256 ionicBalance = ionicAdapter.getBalance();
         uint256 morphoBalance = morphoAdapter.getBalance();
 
-        assertGt(aaveBalance, 0);
+        assertGt(ionicBalance, 0);
         assertGt(morphoBalance, 0);
         console.log("Pilot invested in adapters");
-        console.log("Aave balance:", aaveBalance);
+        console.log("Ionic balance:", ionicBalance);
         console.log("Morpho balance:", morphoBalance);
 
         // Check total AUM calculation

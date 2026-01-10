@@ -19,10 +19,10 @@ abstract contract Adapter is IAdapter, Ownable, ReentrancyGuard {
     /// @notice Base token managed by this adapter (e.g. IDRX, USDC)
     address public immutable TOKEN;
 
-    /// @notice Address of the integrated protocol (e.g. Aave, Morpho)
+    /// @notice Address of the integrated protocol (e.g. Ionic, Morpho)
     address public immutable PROTOCOL_ADDRESS;
 
-    /// @notice Name of the protocol (e.g. "Aave")
+    /// @notice Name of the protocol (e.g. "Ionic")
     string public protocolName;
 
     /// @notice Strategy name for pilot integration

@@ -10,6 +10,14 @@ interface Oracle {
     function getPrice() external view returns (uint256);
 }
 
+/**
+ * @title LendingPool (Ionic/Compound V2 Style)
+ * @notice Mock lending pool following Ionic (Compound V2 fork) interface.
+ *         - Users mint cTokens by depositing underlying assets.
+ *         - Users redeem cTokens to withdraw underlying assets.
+ *         - Supports borrowing with collateral.
+ * @author SuperCluster Dev Team
+ */
 contract LendingPool is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -20,7 +28,7 @@ contract LendingPool is ReentrancyGuard {
     error LTVExceedMaxAmount();
     error InvalidOracle();
 
-    //!Supply
+    //! Supply (cToken shares)
     uint256 public totalSupplyShares;
     uint256 public totalSupplyAssets;
     //!Borrow
@@ -33,8 +41,10 @@ contract LendingPool is ReentrancyGuard {
     address public collateralToken;
     address public oracle;
 
-    event Supply(address user, uint256 amount, uint256 shares);
-    event Withdraw(address user, uint256 amount, uint256 shares);
+    /// @notice Emitted when user mints cTokens (deposits underlying)
+    event Mint(address indexed minter, uint256 mintAmount, uint256 mintTokens);
+    /// @notice Emitted when user redeems cTokens (withdraws underlying)
+    event Redeem(address indexed redeemer, uint256 redeemAmount, uint256 redeemTokens);
     event SupplyCollateral(address user, uint256 amount);
     event Borrow(address user, uint256 amount, uint256 shares);
     event Repay(address user, uint256 amount, uint256 shares);
@@ -54,24 +64,31 @@ contract LendingPool is ReentrancyGuard {
         ltv = _ltv;
     }
 
-    function supply(uint256 amount) external nonReentrant {
+    /**
+     * @notice Sender supplies assets into the market and receives cTokens in exchange.
+     * @dev Follows Ionic/Compound V2 interface.
+     * @param mintAmount The amount of the underlying asset to supply.
+     * @return 0 on success, otherwise a failure code.
+     */
+    function mint(uint256 mintAmount) external nonReentrant returns (uint256) {
         _accureInterest();
-        if (amount == 0) revert ZeroAmount();
-        IERC20(debtToken).safeTransferFrom(msg.sender, address(this), amount);
+        if (mintAmount == 0) revert ZeroAmount();
+        IERC20(debtToken).safeTransferFrom(msg.sender, address(this), mintAmount);
 
-        uint256 shares = 0;
+        uint256 mintTokens = 0;
         if (totalSupplyShares == 0) {
-            shares = amount;
+            mintTokens = mintAmount;
         } else {
             require(totalSupplyAssets > 0, "totalSupplyAssets is zero");
-            shares = (amount * totalSupplyShares / totalSupplyAssets);
+            mintTokens = (mintAmount * totalSupplyShares / totalSupplyAssets);
         }
 
-        userSupplyShares[msg.sender] += shares;
-        totalSupplyShares += shares;
-        totalSupplyAssets += amount;
+        userSupplyShares[msg.sender] += mintTokens;
+        totalSupplyShares += mintTokens;
+        totalSupplyAssets += mintAmount;
 
-        emit Supply(msg.sender, amount, shares);
+        emit Mint(msg.sender, mintAmount, mintTokens);
+        return 0; // Success
     }
 
     function borrow(uint256 amount) external nonReentrant {
@@ -171,26 +188,63 @@ contract LendingPool is ReentrancyGuard {
         if (borrowed > maxBorrow) revert InsufficientCollateral();
     }
 
-    function withdraw(uint256 shares) external nonReentrant {
-        if (shares == 0) revert ZeroAmount();
+    /**
+     * @notice Sender redeems cTokens in exchange for the underlying asset.
+     * @dev Follows Ionic/Compound V2 interface.
+     * @param redeemTokens The number of cTokens to redeem into underlying.
+     * @return 0 on success, otherwise a failure code.
+     */
+    function redeem(uint256 redeemTokens) external nonReentrant returns (uint256) {
+        if (redeemTokens == 0) revert ZeroAmount();
 
-        if (shares > userSupplyShares[msg.sender]) revert InsufficientShares();
+        if (redeemTokens > userSupplyShares[msg.sender]) revert InsufficientShares();
 
         _accureInterest();
 
-        uint256 amount = (shares * totalSupplyAssets) / totalSupplyShares;
+        uint256 redeemAmount = (redeemTokens * totalSupplyAssets) / totalSupplyShares;
 
-        userSupplyShares[msg.sender] -= shares;
-        totalSupplyAssets -= amount;
-        totalSupplyShares -= shares;
+        userSupplyShares[msg.sender] -= redeemTokens;
+        totalSupplyAssets -= redeemAmount;
+        totalSupplyShares -= redeemTokens;
 
         if (totalSupplyShares == 0) {
             require(totalSupplyAssets == 0, "assets mismatch");
         }
 
-        IERC20(debtToken).safeTransfer(msg.sender, amount);
+        IERC20(debtToken).safeTransfer(msg.sender, redeemAmount);
 
-        emit Withdraw(msg.sender, amount, shares);
+        emit Redeem(msg.sender, redeemAmount, redeemTokens);
+        return 0; // Success
+    }
+
+    /**
+     * @notice Sender redeems cTokens in exchange for a specified amount of underlying asset.
+     * @dev Follows Ionic/Compound V2 interface.
+     * @param redeemAmount The amount of underlying to receive from redeeming cTokens.
+     * @return 0 on success, otherwise a failure code.
+     */
+    function redeemUnderlying(uint256 redeemAmount) external nonReentrant returns (uint256) {
+        if (redeemAmount == 0) revert ZeroAmount();
+
+        _accureInterest();
+
+        // Calculate tokens needed for this underlying amount
+        uint256 redeemTokens = (redeemAmount * totalSupplyShares) / totalSupplyAssets;
+
+        if (redeemTokens > userSupplyShares[msg.sender]) revert InsufficientShares();
+
+        userSupplyShares[msg.sender] -= redeemTokens;
+        totalSupplyAssets -= redeemAmount;
+        totalSupplyShares -= redeemTokens;
+
+        if (totalSupplyShares == 0) {
+            require(totalSupplyAssets == 0, "assets mismatch");
+        }
+
+        IERC20(debtToken).safeTransfer(msg.sender, redeemAmount);
+
+        emit Redeem(msg.sender, redeemAmount, redeemTokens);
+        return 0; // Success
     }
 
     function flashLoan(address token, uint256 amount, bytes calldata data) external {
@@ -205,19 +259,40 @@ contract LendingPool is ReentrancyGuard {
     }
 
     /**
-     * @dev ✅ ADD: Get user's supply shares (raw shares, not converted to assets)
-     * @param user The user address to check
-     * @return The amount of supply shares the user holds
+     * @notice Get the cToken balance for an account.
+     * @param owner The address to check.
+     * @return The balance of cTokens.
+     */
+    function balanceOf(address owner) external view returns (uint256) {
+        return userSupplyShares[owner];
+    }
+
+    /**
+     * @notice Get user's supply shares (alias for balanceOf).
+     * @param user The user address to check.
+     * @return The amount of cTokens the user holds.
      */
     function getUserSupplyShares(address user) external view returns (uint256) {
         return userSupplyShares[user];
     }
 
+    /**
+     * @notice Get the underlying balance of an account.
+     * @param owner The address to check.
+     * @return The amount of underlying owned by `owner`.
+     */
+    function balanceOfUnderlying(address owner) external view returns (uint256) {
+        if (totalSupplyShares == 0) return 0;
+        return (userSupplyShares[owner] * totalSupplyAssets) / totalSupplyShares;
+    }
+
+    /**
+     * @notice Get user's supply balance (alias for balanceOfUnderlying).
+     * @param user The user address to check.
+     * @return The underlying balance.
+     */
     function getUserSupplyBalance(address user) external view returns (uint256) {
         if (totalSupplyShares == 0) return 0;
-
-        // Convert user shares to assets using exchange rate
-        // assets = (userShares * totalSupplyAssets) / totalSupplyShares
         return (userSupplyShares[user] * totalSupplyAssets) / totalSupplyShares;
     }
 
@@ -264,5 +339,51 @@ contract LendingPool is ReentrancyGuard {
             uint256 collateralValue = (supplyBalance * ltv) / 1e18;
             healthFactor = (collateralValue * 1e18) / borrowBalance;
         }
+    }
+
+    /**
+     * @notice Get the current exchange rate from cTokens to underlying.
+     * @return The exchange rate scaled by 1e18.
+     */
+    function exchangeRateStored() external view returns (uint256) {
+        if (totalSupplyShares == 0) {
+            return 1e18; // Initial exchange rate 1:1
+        }
+        return (totalSupplyAssets * 1e18) / totalSupplyShares;
+    }
+
+    /**
+     * @notice Get the current exchange rate (same as exchangeRateStored for mock).
+     * @return The exchange rate scaled by 1e18.
+     */
+    function exchangeRateCurrent() external view returns (uint256) {
+        if (totalSupplyShares == 0) {
+            return 1e18;
+        }
+        return (totalSupplyAssets * 1e18) / totalSupplyShares;
+    }
+
+    /**
+     * @notice Get the underlying token address.
+     * @return The underlying token address.
+     */
+    function underlying() external view returns (address) {
+        return debtToken;
+    }
+
+    /**
+     * @notice Get total supply of cTokens.
+     * @return Total cToken supply.
+     */
+    function totalSupply() external view returns (uint256) {
+        return totalSupplyShares;
+    }
+
+    /**
+     * @notice Get cash (underlying balance) held by this contract.
+     * @return Cash balance.
+     */
+    function getCash() external view returns (uint256) {
+        return IERC20(debtToken).balanceOf(address(this));
     }
 }
