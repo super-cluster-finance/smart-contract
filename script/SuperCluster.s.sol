@@ -3,99 +3,135 @@ pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
 import {MockUSDC} from "../src/mocks/tokens/MockUSDC.sol";
+import {MockOracle} from "../src/mocks/MockOracle.sol";
 import {SuperCluster} from "../src/SuperCluster.sol";
-import {MockMorpho} from "../src/mocks/MockMorpho.sol";
-import {LendingPool} from "../src/mocks/MockIonic.sol";
-import {IonicAdapter} from "../src/adapter/IonicAdapter.sol";
-import {MorphoAdapter} from "../src/adapter/MorphoAdapter.sol";
+import {InitLendingPool} from "../src/mocks/MockInit.sol";
+import {Comet} from "../src/mocks/MockCompound.sol";
+import {DolomiteMargin} from "../src/mocks/MockDolomite.sol";
+import {InitAdapter} from "../src/adapter/InitAdapter.sol";
+import {CompoundAdapter} from "../src/adapter/CompoundAdapter.sol";
+import {DolomiteAdapter} from "../src/adapter/DolomiteAdapter.sol";
 import {Pilot} from "../src/pilot/Pilot.sol";
-import {MarketParams} from "../src/mocks/MockMorpho.sol";
 import {Faucet} from "../src/mocks/Faucet.sol";
 
+/**
+ * @title SuperClusterScript
+ * @notice Full deployment script for SuperCluster protocol on Mantle Network
+ * @dev Run with:
+ *      Mantle Sepolia: forge script script/SuperCluster.s.sol --rpc-url mantle-sepolia --broadcast --verify
+ *      Mantle Mainnet: forge script script/SuperCluster.s.sol --rpc-url mantle --broadcast --verify
+ *
+ * Required environment variables:
+ *      - PRIVATE_KEY: Deployer's private key
+ */
 contract SuperClusterScript is Script {
+    // Strategy allocations (basis points, 10000 = 100%)
+    uint256 constant INIT_ALLOCATION = 3000; // 30%
+    uint256 constant COMPOUND_ALLOCATION = 4000; // 40%
+    uint256 constant DOLOMITE_ALLOCATION = 3000; // 30%
+
+    // Default LTV for lending pools (80%)
+    uint256 constant DEFAULT_LLTV = 800000000000000000;
+
     function run() external {
-        // Load deployer private key from environment variable
-        uint256 superClusterPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
 
-        // Start broadcasting transactions
-        vm.startBroadcast(superClusterPrivateKey);
+        vm.startBroadcast(deployerPrivateKey);
 
-        console.log("=== Starting SuperCluster Deployment ===");
-        uint256 lltv = 800000000000000000;
-        address mockOracle = vm.envAddress("MOCK_ORACLE");
-        address mockIrm = vm.envAddress("MOCK_IRM");
+        console.log("==========================================");
+        console.log("  SuperCluster Deployment on Mantle");
+        console.log("==========================================");
+        console.log("Chain ID:", block.chainid);
+        console.log("Deployer:", vm.addr(deployerPrivateKey));
 
-        console.log("=== Mock USDC Smart Contracts ===");
-        MockUSDC base = new MockUSDC();
-        console.log("BaseToken deployed at:", address(base));
+        // ============ INFRASTRUCTURE ============
+        console.log("\n--- Infrastructure ---");
 
-        // Create Morpho market
-        MarketParams memory params = MarketParams({
-            loanToken: address(base),
-            collateralToken: address(base),
-            oracle: address(mockOracle),
-            irm: address(mockIrm),
-            lltv: lltv
-        });
+        MockOracle oracle = new MockOracle();
+        console.log("MockOracle:", address(oracle));
 
-        console.log("=== Faucet Smart Contracts ===");
-        Faucet faucet = new Faucet(address(base));
-        console.log("Faucet deployed at:", address(faucet));
+        MockUSDC baseToken = new MockUSDC();
+        console.log("MockUSDC:", address(baseToken));
 
-        console.log("=== Super Cluster Smart Contracts ===");
-        SuperCluster supercluster = new SuperCluster(address(base));
-        console.log("SuperCluster deployed at:", address(supercluster));
+        Faucet faucet = new Faucet(address(baseToken));
+        console.log("Faucet:", address(faucet));
 
-        console.log("=== Mock Lending Protocol ===");
+        // ============ CORE PROTOCOL ============
+        console.log("\n--- Core Protocol ---");
 
-        console.log("=== Ionic Smart Contracts ===");
-        LendingPool mockIonic = new LendingPool(address(base), address(base), address(mockOracle), lltv);
-        console.log("MockIonic LendingPool deployed at:", address(mockIonic));
+        SuperCluster supercluster = new SuperCluster(address(baseToken));
+        console.log("SuperCluster:", address(supercluster));
 
-        console.log("=== Morpho Smart Morpho ===");
-        MockMorpho mockMorpho = new MockMorpho();
+        // ============ MOCK LENDING PROTOCOLS ============
+        console.log("\n--- Mock Lending Protocols ---");
 
-        mockMorpho.enableIrm(address(mockIrm));
-        mockMorpho.enableLltv(lltv);
+        InitLendingPool mockInit =
+            new InitLendingPool(address(baseToken), address(baseToken), address(oracle), DEFAULT_LLTV);
+        console.log("InitLendingPool:", address(mockInit));
 
-        mockMorpho.createMarket(params);
+        Comet mockCompound = new Comet(address(baseToken), address(baseToken), address(oracle), DEFAULT_LLTV);
+        console.log("Comet (Compound):", address(mockCompound));
 
-        console.log("Mock morpho deployed at:", address(mockMorpho));
+        DolomiteMargin mockDolomite = new DolomiteMargin(address(oracle), DEFAULT_LLTV);
+        uint256 dolomiteMarketId = mockDolomite.addMarket(address(baseToken));
+        console.log("DolomiteMargin:", address(mockDolomite));
+        console.log("  Market ID:", dolomiteMarketId);
 
-        console.log("=== ADAPTER ===");
+        // ============ ADAPTERS ============
+        console.log("\n--- Adapters ---");
 
-        console.log("=== Ionic Adapter Smart Contracts ===");
-        IonicAdapter ionicAdapter = new IonicAdapter(address(base), address(mockIonic), "Ionic", "Conservative Lending");
-        console.log("IonicAdapter deployed at:", address(ionicAdapter));
+        InitAdapter initAdapter =
+            new InitAdapter(address(baseToken), address(mockInit), "Init Capital", "Balanced Lending");
+        console.log("InitAdapter:", address(initAdapter));
 
-        console.log("=== Morpho Adapter Smart Contracts ===");
-        MorphoAdapter morphoAdapter =
-            new MorphoAdapter(address(base), address(mockMorpho), params, "Morpho V1", "Conservative Lending");
-        console.log("MorphoAdapter deployed at:", address(morphoAdapter));
+        CompoundAdapter compoundAdapter =
+            new CompoundAdapter(address(baseToken), address(mockCompound), "Compound V3", "High Yield Lending");
+        console.log("CompoundAdapter:", address(compoundAdapter));
 
-        console.log("=== Pilot ===");
+        DolomiteAdapter dolomiteAdapter = new DolomiteAdapter(
+            address(baseToken), address(mockDolomite), dolomiteMarketId, "Dolomite", "Margin Lending"
+        );
+        console.log("DolomiteAdapter:", address(dolomiteAdapter));
+
+        // ============ PILOT STRATEGY ============
+        console.log("\n--- Pilot Strategy ---");
+
         Pilot pilot = new Pilot(
-            "Conservative DeFi Pilot",
-            "Low-risk DeFi strategies focusing on lending protocols",
-            address(base),
+            "Mantle DeFi Pilot",
+            "Multi-protocol DeFi strategies for Mantle ecosystem",
+            address(baseToken),
             address(supercluster)
         );
-        console.log("Pilot deployed at:", address(pilot));
+        console.log("Pilot:", address(pilot));
 
-        address[] memory adapters = new address[](2);
-        uint256[] memory allocations = new uint256[](2);
+        // Setup strategy allocations
+        address[] memory adapters = new address[](3);
+        uint256[] memory allocations = new uint256[](3);
 
-        adapters[0] = address(ionicAdapter);
-        allocations[0] = 6000; // 60% Ionic
+        adapters[0] = address(initAdapter);
+        allocations[0] = INIT_ALLOCATION;
 
-        adapters[1] = address(morphoAdapter);
-        allocations[1] = 4000; // 40% Morpho
+        adapters[1] = address(compoundAdapter);
+        allocations[1] = COMPOUND_ALLOCATION;
+
+        adapters[2] = address(dolomiteAdapter);
+        allocations[2] = DOLOMITE_ALLOCATION;
 
         pilot.setPilotStrategy(adapters, allocations);
+        supercluster.registerPilot(address(pilot), address(baseToken));
 
-        pilot.setPilotStrategy(adapters, allocations);
-
-        supercluster.registerPilot(address(pilot), address(base));
+        // ============ SUMMARY ============
+        console.log("\n==========================================");
+        console.log("  Deployment Complete!");
+        console.log("==========================================");
+        console.log("Network: Mantle (Chain ID:", block.chainid, ")");
+        console.log("Strategy: Init 30% | Compound 40% | Dolomite 30%");
+        console.log("\nKey Contracts:");
+        console.log("  MockUSDC:     ", address(baseToken));
+        console.log("  Faucet:       ", address(faucet));
+        console.log("  SuperCluster: ", address(supercluster));
+        console.log("  Pilot:        ", address(pilot));
+        console.log("==========================================");
 
         vm.stopBroadcast();
     }

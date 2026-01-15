@@ -6,15 +6,15 @@ import {SuperCluster} from "../src/SuperCluster.sol";
 import {SToken} from "../src/tokens/SToken.sol";
 import {WsToken} from "../src/tokens/WsToken.sol";
 import {Pilot} from "../src/pilot/Pilot.sol";
-import {IonicAdapter} from "../src/adapter/IonicAdapter.sol";
-import {MorphoAdapter} from "../src/adapter/MorphoAdapter.sol";
-import {LendingPool} from "../src/mocks/MockIonic.sol";
-import {MockMorpho} from "../src/mocks/MockMorpho.sol";
+import {InitAdapter} from "../src/adapter/InitAdapter.sol";
+import {CompoundAdapter} from "../src/adapter/CompoundAdapter.sol";
+import {DolomiteAdapter} from "../src/adapter/DolomiteAdapter.sol";
+import {InitLendingPool} from "../src/mocks/MockInit.sol";
+import {Comet} from "../src/mocks/MockCompound.sol";
+import {DolomiteMargin} from "../src/mocks/MockDolomite.sol";
 import {MockIDRX} from "../src/mocks/tokens/MockIDRX.sol";
-import {MarketParams} from "../src/mocks/interfaces/IMorpho.sol";
 import {Withdraw} from "../src/tokens/WithDraw.sol";
 import {MockOracle} from "../src/mocks/MockOracle.sol";
-import {MockIrm} from "../src/mocks/MockIrm.sol";
 
 contract SuperClusterTest is Test {
     SuperCluster public superCluster;
@@ -22,10 +22,13 @@ contract SuperClusterTest is Test {
     WsToken public wsToken;
     MockIDRX public idrx;
     Pilot public pilot;
-    IonicAdapter public ionicAdapter;
-    MorphoAdapter public morphoAdapter;
-    LendingPool public mockIonic;
-    MockMorpho public mockMorpho;
+    InitAdapter public initAdapter;
+    CompoundAdapter public compoundAdapter;
+    DolomiteAdapter public dolomiteAdapter;
+    InitLendingPool public mockInit;
+    Comet public mockCompound;
+    DolomiteMargin public mockDolomite;
+    uint256 public dolomiteMarketId;
 
     address public owner;
     address public user1;
@@ -49,15 +52,14 @@ contract SuperClusterTest is Test {
         sToken = superCluster.sToken();
         wsToken = superCluster.wsToken();
 
-        MockIrm mockIrm = new MockIrm();
         MockOracle mockOracle = new MockOracle();
         uint256 ltv = 800000000000000000; // 80% LTV
 
-        //Deploy Mock protocols
-        _deployMockProtocols(address(mockIrm), address(mockOracle), ltv);
+        // Deploy Mock protocols
+        _deployMockProtocols(address(mockOracle), ltv);
 
         // Deploy adapters
-        _deployAdapters(address(mockIrm), address(mockOracle), ltv);
+        _deployAdapters();
 
         // Deploy pilot
         _deployPilot();
@@ -72,61 +74,51 @@ contract SuperClusterTest is Test {
         console.log("SToken:", address(sToken));
     }
 
-    function _deployMockProtocols(address _mockIrm, address _mockOracle, uint256 _ltv) internal {
-        mockIonic = new LendingPool(address(idrx), address(idrx), address(_mockOracle), _ltv);
+    function _deployMockProtocols(address _mockOracle, uint256 _ltv) internal {
+        // Deploy MockInit (Init Capital style)
+        mockInit = new InitLendingPool(address(idrx), address(idrx), address(_mockOracle), _ltv);
 
-        // Deploy MockMorpho
-        mockMorpho = new MockMorpho();
+        // Deploy MockCompound (Compound V3 style)
+        mockCompound = new Comet(address(idrx), address(idrx), address(_mockOracle), _ltv);
 
-        mockMorpho.enableLltv(_ltv);
-        mockMorpho.enableIrm(address(_mockIrm));
-
-        // Create Morpho market
-        MarketParams memory params = MarketParams({
-            loanToken: address(idrx),
-            collateralToken: address(idrx),
-            oracle: address(_mockOracle),
-            irm: address(_mockIrm),
-            lltv: _ltv
-        });
-
-        mockMorpho.createMarket(params);
+        // Deploy MockDolomite (Margin Account style)
+        mockDolomite = new DolomiteMargin(address(_mockOracle), _ltv);
+        // Add market for IDRX
+        dolomiteMarketId = mockDolomite.addMarket(address(idrx));
     }
 
-    function _deployAdapters(address _mockIrm, address _mockOracle, uint256 _ltv) internal {
-        // Deploy IonicAdapter
-        ionicAdapter = new IonicAdapter(address(idrx), address(mockIonic), "Ionic", "Conservative Lending");
+    function _deployAdapters() internal {
+        // Deploy InitAdapter (30%)
+        initAdapter = new InitAdapter(address(idrx), address(mockInit), "Init Capital", "Balanced Lending");
 
-        // Deploy MorphoAdapter
-        MarketParams memory params = MarketParams({
-            loanToken: address(idrx),
-            collateralToken: address(idrx),
-            oracle: address(_mockOracle),
-            irm: address(_mockIrm),
-            lltv: _ltv
-        });
+        // Deploy CompoundAdapter (40%)
+        compoundAdapter = new CompoundAdapter(address(idrx), address(mockCompound), "Compound V3", "High Yield Lending");
 
-        morphoAdapter =
-            new MorphoAdapter(address(idrx), address(mockMorpho), params, "Morpho Blue", "High Yield Lending");
+        // Deploy DolomiteAdapter (30%)
+        dolomiteAdapter = new DolomiteAdapter(
+            address(idrx), address(mockDolomite), dolomiteMarketId, "Dolomite", "Margin Lending"
+        );
     }
 
     function _deployPilot() internal {
         pilot = new Pilot(
-            "Conservative DeFi Pilot",
-            "Low-risk DeFi strategies focusing on lending protocols",
+            "DeFi Yield Pilot",
+            "Multi-protocol DeFi strategies focusing on lending protocols",
             address(idrx),
             address(superCluster)
         );
     }
 
     function _setupPilotStrategy() internal {
-        address[] memory adapters = new address[](2);
-        uint256[] memory allocations = new uint256[](2);
+        address[] memory adapters = new address[](3);
+        uint256[] memory allocations = new uint256[](3);
 
-        adapters[0] = address(ionicAdapter);
-        adapters[1] = address(morphoAdapter);
-        allocations[0] = 6000; // 60% Ionic
-        allocations[1] = 4000; // 40% Morpho
+        adapters[0] = address(initAdapter);
+        adapters[1] = address(compoundAdapter);
+        adapters[2] = address(dolomiteAdapter);
+        allocations[0] = 3000; // 30% Init
+        allocations[1] = 4000; // 40% Compound
+        allocations[2] = 3000; // 30% Dolomite
 
         pilot.setPilotStrategy(adapters, allocations);
     }
@@ -308,7 +300,7 @@ contract SuperClusterTest is Test {
     // ==================== PILOT TESTS ====================
 
     function test_Pilot_InitialState() public view {
-        assertEq(pilot.name(), "Conservative DeFi Pilot");
+        assertEq(pilot.name(), "DeFi Yield Pilot");
         assertTrue(bytes(pilot.description()).length > 0);
         assertEq(pilot.TOKEN(), address(idrx));
     }
@@ -317,7 +309,7 @@ contract SuperClusterTest is Test {
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
 
-        adapters[0] = address(ionicAdapter);
+        adapters[0] = address(initAdapter);
         allocations[0] = 10000; // 100%
 
         pilot.setPilotStrategy(adapters, allocations);
@@ -326,7 +318,7 @@ contract SuperClusterTest is Test {
 
         assertEq(returnedAdapters.length, 1);
         assertEq(returnedAllocations.length, 1);
-        assertEq(returnedAdapters[0], address(ionicAdapter));
+        assertEq(returnedAdapters[0], address(initAdapter));
         assertEq(returnedAllocations[0], 10000);
     }
 
@@ -337,17 +329,17 @@ contract SuperClusterTest is Test {
 
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
-        adapters[0] = address(ionicAdapter);
+        adapters[0] = address(initAdapter);
         allocations[0] = 10000;
 
         // Fund adapter with tokens first
-        status = idrx.transfer(address(ionicAdapter), DEPOSIT_AMOUNT);
+        status = idrx.transfer(address(initAdapter), DEPOSIT_AMOUNT);
         require(status, "Transfer failed");
 
         pilot.invest(DEPOSIT_AMOUNT, adapters, allocations);
 
         // Check if adapter received tokens
-        assertTrue(ionicAdapter.getBalance() > 0);
+        assertTrue(initAdapter.getBalance() > 0);
     }
 
     function test_Pilot_GetTotalValue() public {
@@ -365,45 +357,45 @@ contract SuperClusterTest is Test {
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
 
-        adapters[0] = address(ionicAdapter);
+        adapters[0] = address(initAdapter);
         allocations[0] = 5000; // Only 50%, should fail
 
         vm.expectRevert();
         pilot.setPilotStrategy(adapters, allocations);
     }
 
-    // ==================== IONIC ADAPTER TESTS ====================
+    // ==================== INIT ADAPTER TESTS ====================
 
-    function test_IonicAdapter_InitialState() public view {
-        assertEq(ionicAdapter.getProtocolName(), "Ionic");
-        assertEq(ionicAdapter.getPilotStrategy(), "Conservative Lending");
-        assertEq(address(ionicAdapter.LENDINGPOOL()), address(mockIonic));
-        assertTrue(ionicAdapter.isActive());
+    function test_InitAdapter_InitialState() public view {
+        assertEq(initAdapter.getProtocolName(), "Init Capital");
+        assertEq(initAdapter.getPilotStrategy(), "Balanced Lending");
+        assertEq(address(initAdapter.LENDING_POOL()), address(mockInit));
+        assertTrue(initAdapter.isActive());
     }
 
-    function test_IonicAdapter_Deposit() public {
+    function test_InitAdapter_Deposit() public {
         uint256 depositAmount = 1000e18;
 
-        idrx.approve(address(ionicAdapter), depositAmount);
+        idrx.approve(address(initAdapter), depositAmount);
 
-        uint256 shares = ionicAdapter.deposit(depositAmount);
+        uint256 shares = initAdapter.deposit(depositAmount);
 
         assertGt(shares, 0);
-        assertGt(ionicAdapter.getBalance(), 0);
-        assertEq(ionicAdapter.totalDeposited(), depositAmount);
+        assertGt(initAdapter.getBalance(), 0);
+        assertEq(initAdapter.totalDeposited(), depositAmount);
     }
 
-    function test_IonicAdapter_Withdraw() public {
+    function test_InitAdapter_Withdraw() public {
         uint256 depositAmount = 1000e18;
 
         // First deposit
-        idrx.approve(address(ionicAdapter), depositAmount);
-        uint256 shares = ionicAdapter.deposit(depositAmount);
+        idrx.approve(address(initAdapter), depositAmount);
+        uint256 shares = initAdapter.deposit(depositAmount);
 
         uint256 balanceBefore = idrx.balanceOf(address(this));
 
         // Withdraw
-        uint256 withdrawn = ionicAdapter.withdraw(shares);
+        uint256 withdrawn = initAdapter.withdraw(shares);
 
         uint256 balanceAfter = idrx.balanceOf(address(this));
 
@@ -411,58 +403,66 @@ contract SuperClusterTest is Test {
         assertGt(balanceAfter, balanceBefore);
     }
 
-    function test_IonicAdapter_ConvertToShares() public view {
+    function test_InitAdapter_ConvertToShares() public view {
         uint256 assets = 1000e18;
-        uint256 shares = ionicAdapter.convertToShares(assets);
+        uint256 shares = initAdapter.convertToShares(assets);
 
         // Should be 1:1 initially
         assertEq(shares, assets);
     }
 
-    function test_Fail_IonicAdapter_DepositZero() public {
-        idrx.approve(address(ionicAdapter), 0);
+    function test_InitAdapter_ConvertToAssets() public view {
+        uint256 shares = 1000e18;
+        uint256 assets = initAdapter.convertToAssets(shares);
+
+        // Should be 1:1 initially
+        assertEq(assets, shares);
+    }
+
+    function test_Fail_InitAdapter_DepositZero() public {
+        idrx.approve(address(initAdapter), 0);
         vm.expectRevert();
-        ionicAdapter.deposit(0);
+        initAdapter.deposit(0);
     }
 
-    function test_Fail_IonicAdapter_WithdrawExcessive() public {
-        idrx.approve(address(ionicAdapter), 0);
+    function test_Fail_InitAdapter_WithdrawExcessive() public {
+        idrx.approve(address(initAdapter), 0);
         vm.expectRevert();
-        ionicAdapter.withdraw(1000e18); // No deposits made
+        initAdapter.withdraw(1000e18); // No deposits made
     }
 
-    // ==================== MORPHO ADAPTER TESTS ====================
+    // ==================== COMPOUND ADAPTER TESTS ====================
 
-    function test_MorphoAdapter_InitialState() public view {
-        assertEq(morphoAdapter.getProtocolName(), "Morpho Blue");
-        assertEq(morphoAdapter.getPilotStrategy(), "High Yield Lending");
-        assertTrue(morphoAdapter.isActive());
-        assertTrue(morphoAdapter.getMarketId() != bytes32(0));
+    function test_CompoundAdapter_InitialState() public view {
+        assertEq(compoundAdapter.getProtocolName(), "Compound V3");
+        assertEq(compoundAdapter.getPilotStrategy(), "High Yield Lending");
+        assertEq(address(compoundAdapter.COMET()), address(mockCompound));
+        assertTrue(compoundAdapter.isActive());
     }
 
-    function test_MorphoAdapter_Deposit() public {
+    function test_CompoundAdapter_Deposit() public {
         uint256 depositAmount = 1000e18;
 
-        idrx.approve(address(morphoAdapter), depositAmount);
+        idrx.approve(address(compoundAdapter), depositAmount);
 
-        uint256 shares = morphoAdapter.deposit(depositAmount);
+        uint256 shares = compoundAdapter.deposit(depositAmount);
 
         assertGt(shares, 0);
-        assertGt(morphoAdapter.getBalance(), 0);
-        assertEq(morphoAdapter.totalDeposited(), depositAmount);
+        assertGt(compoundAdapter.getBalance(), 0);
+        assertEq(compoundAdapter.totalDeposited(), depositAmount);
     }
 
-    function test_MorphoAdapter_Withdraw() public {
+    function test_CompoundAdapter_Withdraw() public {
         uint256 depositAmount = 1000e18;
 
         // First deposit
-        idrx.approve(address(morphoAdapter), depositAmount);
-        uint256 shares = morphoAdapter.deposit(depositAmount);
+        idrx.approve(address(compoundAdapter), depositAmount);
+        uint256 shares = compoundAdapter.deposit(depositAmount);
 
         uint256 balanceBefore = idrx.balanceOf(address(this));
 
         // Withdraw
-        uint256 withdrawn = morphoAdapter.withdraw(shares);
+        uint256 withdrawn = compoundAdapter.withdraw(shares);
 
         uint256 balanceAfter = idrx.balanceOf(address(this));
 
@@ -470,22 +470,111 @@ contract SuperClusterTest is Test {
         assertGt(balanceAfter, balanceBefore);
     }
 
-    function test_MorphoAdapter_GetPosition() public {
-        uint256 depositAmount = 1000e18;
+    function test_CompoundAdapter_ConvertToShares() public view {
+        uint256 assets = 1000e18;
+        uint256 shares = compoundAdapter.convertToShares(assets);
 
-        idrx.approve(address(morphoAdapter), depositAmount);
-        morphoAdapter.deposit(depositAmount);
-
-        (uint128 supplyShares, uint128 borrowShares, uint128 collateral) = morphoAdapter.getPosition();
-
-        assertGt(supplyShares, 0);
-        assertEq(borrowShares, 0); // No borrowing
-        assertEq(collateral, 0);
+        // Should be 1:1 in Compound V3
+        assertEq(shares, assets);
     }
 
-    function test_Fail_MorphoAdapter_DepositZero() public {
-        idrx.approve(address(morphoAdapter), 0);
+    function test_CompoundAdapter_ConvertToAssets() public view {
+        uint256 shares = 1000e18;
+        uint256 assets = compoundAdapter.convertToAssets(shares);
+
+        // Should be 1:1 in Compound V3
+        assertEq(assets, shares);
+    }
+
+    function test_Fail_CompoundAdapter_DepositZero() public {
+        idrx.approve(address(compoundAdapter), 0);
         vm.expectRevert();
-        morphoAdapter.deposit(0);
+        compoundAdapter.deposit(0);
+    }
+
+    function test_Fail_CompoundAdapter_WithdrawExcessive() public {
+        idrx.approve(address(compoundAdapter), 0);
+        vm.expectRevert();
+        compoundAdapter.withdraw(1000e18); // No deposits made
+    }
+
+    // ==================== DOLOMITE ADAPTER TESTS ====================
+
+    function test_DolomiteAdapter_InitialState() public view {
+        assertEq(dolomiteAdapter.getProtocolName(), "Dolomite");
+        assertEq(dolomiteAdapter.getPilotStrategy(), "Margin Lending");
+        assertEq(address(dolomiteAdapter.DOLOMITE()), address(mockDolomite));
+        assertEq(dolomiteAdapter.MARKET_ID(), dolomiteMarketId);
+        assertTrue(dolomiteAdapter.isActive());
+    }
+
+    function test_DolomiteAdapter_Deposit() public {
+        uint256 depositAmount = 1000e18;
+
+        idrx.approve(address(dolomiteAdapter), depositAmount);
+
+        uint256 shares = dolomiteAdapter.deposit(depositAmount);
+
+        assertGt(shares, 0);
+        assertGt(dolomiteAdapter.getBalance(), 0);
+        assertEq(dolomiteAdapter.totalDeposited(), depositAmount);
+    }
+
+    function test_DolomiteAdapter_Withdraw() public {
+        uint256 depositAmount = 1000e18;
+
+        // First deposit
+        idrx.approve(address(dolomiteAdapter), depositAmount);
+        uint256 shares = dolomiteAdapter.deposit(depositAmount);
+
+        uint256 balanceBefore = idrx.balanceOf(address(this));
+
+        // Withdraw
+        uint256 withdrawn = dolomiteAdapter.withdraw(shares);
+
+        uint256 balanceAfter = idrx.balanceOf(address(this));
+
+        assertGt(withdrawn, 0);
+        assertGt(balanceAfter, balanceBefore);
+    }
+
+    function test_DolomiteAdapter_GetAccountBalance() public {
+        uint256 depositAmount = 1000e18;
+
+        idrx.approve(address(dolomiteAdapter), depositAmount);
+        dolomiteAdapter.deposit(depositAmount);
+
+        (bool sign, uint256 value) = dolomiteAdapter.getAccountBalance();
+
+        assertTrue(sign); // Positive balance
+        assertGt(value, 0);
+    }
+
+    function test_DolomiteAdapter_ConvertToShares() public view {
+        uint256 assets = 1000e18;
+        uint256 shares = dolomiteAdapter.convertToShares(assets);
+
+        // Should be 1:1 in Dolomite
+        assertEq(shares, assets);
+    }
+
+    function test_DolomiteAdapter_ConvertToAssets() public view {
+        uint256 shares = 1000e18;
+        uint256 assets = dolomiteAdapter.convertToAssets(shares);
+
+        // Should be 1:1 in Dolomite
+        assertEq(assets, shares);
+    }
+
+    function test_Fail_DolomiteAdapter_DepositZero() public {
+        idrx.approve(address(dolomiteAdapter), 0);
+        vm.expectRevert();
+        dolomiteAdapter.deposit(0);
+    }
+
+    function test_Fail_DolomiteAdapter_WithdrawExcessive() public {
+        idrx.approve(address(dolomiteAdapter), 0);
+        vm.expectRevert();
+        dolomiteAdapter.withdraw(1000e18); // No deposits made
     }
 }

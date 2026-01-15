@@ -17,15 +17,18 @@ contract IntegrationTest is SuperClusterTest {
         console.log("User deposited and received sTokens");
         vm.stopPrank();
 
-        // Check adapter balances
-        uint256 ionicBalance = ionicAdapter.getBalance();
-        uint256 morphoBalance = morphoAdapter.getBalance();
+        // Check adapter balances (3 protocols: Init 30%, Compound 40%, Dolomite 30%)
+        uint256 initBalance = initAdapter.getBalance();
+        uint256 compoundBalance = compoundAdapter.getBalance();
+        uint256 dolomiteBalance = dolomiteAdapter.getBalance();
 
-        assertGt(ionicBalance, 0);
-        assertGt(morphoBalance, 0);
-        console.log("Pilot invested in adapters");
-        console.log("Ionic balance:", ionicBalance);
-        console.log("Morpho balance:", morphoBalance);
+        assertGt(initBalance, 0);
+        assertGt(compoundBalance, 0);
+        assertGt(dolomiteBalance, 0);
+        console.log("Pilot invested in 3 adapters");
+        console.log("Init balance (30%):", initBalance);
+        console.log("Compound balance (40%):", compoundBalance);
+        console.log("Dolomite balance (30%):", dolomiteBalance);
 
         // Check total AUM calculation
         uint256 totalAUM = superCluster.calculateTotalAUM();
@@ -174,15 +177,17 @@ contract IntegrationTest is SuperClusterTest {
     }
 
     function test_Integration_PilotStrategy() public {
-        console.log("=== Testing Pilot Strategy Management ===");
+        console.log("=== Testing Pilot Strategy Management (3 Protocols) ===");
 
-        // Set up initial strategy
-        address[] memory adapters = new address[](2);
-        uint256[] memory allocations = new uint256[](2);
-        adapters[0] = address(ionicAdapter);
-        adapters[1] = address(morphoAdapter);
-        allocations[0] = 7000; // 70% Ionic
-        allocations[1] = 3000; // 30% Morpho
+        // Set up initial strategy with 3 protocols: Init 30%, Compound 40%, Dolomite 30%
+        address[] memory adapters = new address[](3);
+        uint256[] memory allocations = new uint256[](3);
+        adapters[0] = address(initAdapter);
+        adapters[1] = address(compoundAdapter);
+        adapters[2] = address(dolomiteAdapter);
+        allocations[0] = 3000; // 30% Init
+        allocations[1] = 4000; // 40% Compound
+        allocations[2] = 3000; // 30% Dolomite
 
         pilot.setPilotStrategy(adapters, allocations);
 
@@ -194,70 +199,101 @@ contract IntegrationTest is SuperClusterTest {
         pilot.invest(DEPOSIT_AMOUNT, adapters, allocations);
 
         // Check allocation
-        uint256 ionicBalance = ionicAdapter.getBalance();
-        uint256 morphoBalance = morphoAdapter.getBalance();
+        uint256 initBalance = initAdapter.getBalance();
+        uint256 compoundBalance = compoundAdapter.getBalance();
+        uint256 dolomiteBalance = dolomiteAdapter.getBalance();
 
-        uint256 expectedIonic = (DEPOSIT_AMOUNT * 7000) / 10000;
-        uint256 expectedMorpho = (DEPOSIT_AMOUNT * 3000) / 10000;
+        uint256 expectedInit = (DEPOSIT_AMOUNT * 3000) / 10000;
+        uint256 expectedCompound = (DEPOSIT_AMOUNT * 4000) / 10000;
+        uint256 expectedDolomite = (DEPOSIT_AMOUNT * 3000) / 10000;
 
-        assertApproxEqRel(ionicBalance, expectedIonic, 1e16); // 1% tolerance
-        assertApproxEqRel(morphoBalance, expectedMorpho, 1e16);
+        assertApproxEqRel(initBalance, expectedInit, 1e16); // 1% tolerance
+        assertApproxEqRel(compoundBalance, expectedCompound, 1e16);
+        assertApproxEqRel(dolomiteBalance, expectedDolomite, 1e16);
 
-        console.log("Strategy allocation working correctly");
-        console.log("Expected Ionic:", expectedIonic, "Actual:", ionicBalance);
-        console.log("Expected Morpho:", expectedMorpho, "Actual:", morphoBalance);
+        console.log("Strategy allocation working correctly (Init 30%, Compound 40%, Dolomite 30%)");
+        console.log("Expected Init (30%):", expectedInit, "Actual:", initBalance);
+        console.log("Expected Compound (40%):", expectedCompound, "Actual:", compoundBalance);
+        console.log("Expected Dolomite (30%):", expectedDolomite, "Actual:", dolomiteBalance);
 
-        // Test strategy update
-        allocations[0] = 5000; // 50% Ionic
-        allocations[1] = 5000; // 50% Morpho
+        // Test strategy update to equal distribution
+        allocations[0] = 3333; // 33.33% Init
+        allocations[1] = 3334; // 33.34% Compound
+        allocations[2] = 3333; // 33.33% Dolomite
 
         pilot.setPilotStrategy(adapters, allocations);
 
         (, uint256[] memory newAllocations) = pilot.getStrategy();
-        assertEq(newAllocations[0], 5000);
-        assertEq(newAllocations[1], 5000);
+        assertEq(newAllocations[0], 3333);
+        assertEq(newAllocations[1], 3334);
+        assertEq(newAllocations[2], 3333);
 
-        console.log("Strategy updated successfully");
+        console.log("Strategy updated to equal distribution successfully");
     }
 
     function test_Integration_AdapterInteraction() public {
-        console.log("=== Testing Adapter Interactions ===");
+        console.log("=== Testing Adapter Interactions (3 Protocols) ===");
 
         uint256 depositAmount = 1000e18;
 
-        // Test Ionic Adapter
-        idrx.approve(address(ionicAdapter), depositAmount);
-        uint256 ionicShares = ionicAdapter.deposit(depositAmount);
+        // Test Init Adapter
+        idrx.approve(address(initAdapter), depositAmount);
+        uint256 initShares = initAdapter.deposit(depositAmount);
 
-        uint256 ionicBalance = ionicAdapter.getBalance();
-        assertGt(ionicBalance, 0);
-        console.log("IonicAdapter deposit successful, balance:", ionicBalance);
+        uint256 initBalance = initAdapter.getBalance();
+        assertGt(initBalance, 0);
+        console.log("InitAdapter deposit successful, balance:", initBalance);
 
-        // Test conversion functions
-        uint256 convertedShares = ionicAdapter.convertToShares(depositAmount);
-        uint256 convertedAssets = ionicAdapter.convertToAssets(ionicShares);
+        // Test Init conversion functions
+        uint256 initConvertedShares = initAdapter.convertToShares(depositAmount);
+        uint256 initConvertedAssets = initAdapter.convertToAssets(initShares);
 
-        console.log("Converted shares:", convertedShares);
-        console.log("Converted assets:", convertedAssets);
+        console.log("Init converted shares:", initConvertedShares);
+        console.log("Init converted assets:", initConvertedAssets);
 
-        // Test Morpho Adapter
-        idrx.approve(address(morphoAdapter), depositAmount);
-        uint256 morphoShares = morphoAdapter.deposit(depositAmount);
+        // Test Compound Adapter
+        idrx.approve(address(compoundAdapter), depositAmount);
+        uint256 compoundShares = compoundAdapter.deposit(depositAmount);
 
-        uint256 morphoBalance = morphoAdapter.getBalance();
-        assertGt(morphoBalance, 0);
-        console.log("MorphoAdapter deposit successful, balance:", morphoBalance);
+        uint256 compoundBalance = compoundAdapter.getBalance();
+        assertGt(compoundBalance, 0);
+        console.log("CompoundAdapter deposit successful, balance:", compoundBalance);
 
-        // Test withdrawals
-        uint256 withdrawnIonic = ionicAdapter.withdraw(ionicShares);
-        uint256 withdrawnMorpho = morphoAdapter.withdraw(morphoShares);
+        // Test Compound conversion functions
+        uint256 compoundConvertedShares = compoundAdapter.convertToShares(depositAmount);
+        uint256 compoundConvertedAssets = compoundAdapter.convertToAssets(compoundShares);
 
-        assertGt(withdrawnIonic, 0);
-        assertGt(withdrawnMorpho, 0);
+        console.log("Compound converted shares:", compoundConvertedShares);
+        console.log("Compound converted assets:", compoundConvertedAssets);
 
-        console.log("Withdrawals successful");
-        console.log("Withdrawn from Ionic:", withdrawnIonic);
-        console.log("Withdrawn from Morpho:", withdrawnMorpho);
+        // Test Dolomite Adapter
+        idrx.approve(address(dolomiteAdapter), depositAmount);
+        uint256 dolomiteShares = dolomiteAdapter.deposit(depositAmount);
+
+        uint256 dolomiteBalance = dolomiteAdapter.getBalance();
+        assertGt(dolomiteBalance, 0);
+        console.log("DolomiteAdapter deposit successful, balance:", dolomiteBalance);
+
+        // Test Dolomite conversion functions
+        uint256 dolomiteConvertedShares = dolomiteAdapter.convertToShares(depositAmount);
+        uint256 dolomiteConvertedAssets = dolomiteAdapter.convertToAssets(dolomiteShares);
+
+        console.log("Dolomite converted shares:", dolomiteConvertedShares);
+        console.log("Dolomite converted assets:", dolomiteConvertedAssets);
+
+        // Test withdrawals from all 3 adapters
+        uint256 withdrawnInit = initAdapter.withdraw(initShares);
+        uint256 withdrawnCompound = compoundAdapter.withdraw(compoundShares);
+        uint256 withdrawnDolomite = dolomiteAdapter.withdraw(dolomiteShares);
+
+        assertGt(withdrawnInit, 0);
+        assertGt(withdrawnCompound, 0);
+        assertGt(withdrawnDolomite, 0);
+
+        console.log("Withdrawals successful from all 3 protocols");
+        console.log("Withdrawn from Init:", withdrawnInit);
+        console.log("Withdrawn from Compound:", withdrawnCompound);
+        console.log("Withdrawn from Dolomite:", withdrawnDolomite);
     }
 
     function test_Integration_ErrorHandling() public {
@@ -279,15 +315,15 @@ contract IntegrationTest is SuperClusterTest {
 
         // Test Adapter errors
         vm.expectRevert();
-        ionicAdapter.deposit(0);
+        initAdapter.deposit(0);
 
         vm.expectRevert();
-        ionicAdapter.withdraw(1000e18); // No balance
+        initAdapter.withdraw(1000e18); // No balance
 
         // Test Pilot errors
         address[] memory adapters = new address[](1);
         uint256[] memory allocations = new uint256[](1);
-        adapters[0] = address(ionicAdapter);
+        adapters[0] = address(initAdapter);
         allocations[0] = 5000; // Invalid: not 100%
 
         vm.expectRevert();
@@ -423,17 +459,17 @@ contract IntegrationTest is SuperClusterTest {
         withdrawManager.claim(requestId);
 
         uint256 sTokenAfterWithdraw2 = sToken.balanceOf(user2);
-        console.log("User1 sToken after withdraw:", sTokenAfterWithdraw2);
-        assertEq(sTokenAfterWithdraw2, 0, "User1 sToken should be zero after withdraw");
+        console.log("User2 sToken after withdraw:", sTokenAfterWithdraw2);
+        assertEq(sTokenAfterWithdraw2, 0, "User2 sToken should be zero after withdraw");
 
         uint256 balanceIdrxAfterWithdraw2 = idrx.balanceOf(user2);
         uint256 idrxAfterWithdraw2 = balanceIdrxAfterWithdraw2 - balanceIdrxBeforeWithdraw2;
-        console.log("User1 IDRX after withdraw:", idrxAfterWithdraw2);
+        console.log("User2 IDRX after withdraw:", idrxAfterWithdraw2);
         assertApproxEqRel(
             idrxAfterWithdraw2,
             sTokenAfterUnwrap2,
             1e16,
-            "User1 should receive IDRX equal to sToken withdrawn (including yield)"
+            "User2 should receive IDRX equal to sToken withdrawn (including yield)"
         );
 
         console.log("Multiple users wrap/unwrap with rebasing yield test complete");
@@ -450,15 +486,18 @@ contract IntegrationTest is SuperClusterTest {
         console.log("User deposited and received sTokens");
         vm.stopPrank();
 
-        // Check adapter balances
-        uint256 ionicBalance = ionicAdapter.getBalance();
-        uint256 morphoBalance = morphoAdapter.getBalance();
+        // Check adapter balances (3 protocols: Init 30%, Compound 40%, Dolomite 30%)
+        uint256 initBalance = initAdapter.getBalance();
+        uint256 compoundBalance = compoundAdapter.getBalance();
+        uint256 dolomiteBalance = dolomiteAdapter.getBalance();
 
-        assertGt(ionicBalance, 0);
-        assertGt(morphoBalance, 0);
-        console.log("Pilot invested in adapters");
-        console.log("Ionic balance:", ionicBalance);
-        console.log("Morpho balance:", morphoBalance);
+        assertGt(initBalance, 0);
+        assertGt(compoundBalance, 0);
+        assertGt(dolomiteBalance, 0);
+        console.log("Pilot invested in 3 adapters");
+        console.log("Init balance (30%):", initBalance);
+        console.log("Compound balance (40%):", compoundBalance);
+        console.log("Dolomite balance (30%):", dolomiteBalance);
 
         // Check total AUM calculation
         uint256 totalAUM = superCluster.calculateTotalAUM();

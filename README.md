@@ -3,8 +3,9 @@
 [![Solidity](https://img.shields.io/badge/Solidity-0.8.13-blue)](https://docs.soliditylang.org/)
 [![Foundry](https://img.shields.io/badge/Built%20with-Foundry-orange)](https://book.getfoundry.sh/)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Mantle](https://img.shields.io/badge/Network-Mantle-black)](https://mantle.xyz/)
 
-SuperCluster is a modular DeFi yield aggregation protocol that enables users to stake tokens, earn yield through automated strategy pilots, and receive rebasing reward tokens. The protocol routes deposits across multiple DeFi protocols (Ionic, Morpho) via pluggable adapters while maintaining a unified user experience.
+SuperCluster is a modular DeFi yield aggregation protocol that enables users to stake tokens, earn yield through automated strategy pilots, and receive rebasing reward tokens. The protocol routes deposits across multiple DeFi protocols (Init Capital, Compound V3, Dolomite) via pluggable adapters while maintaining a unified user experience.
 
 ## Table of Contents
 
@@ -14,8 +15,8 @@ SuperCluster is a modular DeFi yield aggregation protocol that enables users to 
 - [Token System](#token-system)
 - [User Flows](#user-flows)
 - [Deployment](#deployment)
-- [Development](#development)
 - [Contract Addresses](#contract-addresses)
+- [Development](#development)
 - [Security](#security)
 
 ---
@@ -31,9 +32,18 @@ SuperCluster abstracts away the complexity of yield farming by:
 
 ### Supported Networks
 
-| Network      | Chain ID | Status     |
-| ------------ | -------- | ---------- |
-| Lisk Sepolia | 4202     | ✅ Testnet |
+| Network        | Chain ID | Status     |
+| -------------- | -------- | ---------- |
+| Mantle Mainnet | 5000     | 🔜 Coming  |
+| Mantle Sepolia | 5003     | ✅ Testnet |
+
+### Integrated Protocols
+
+| Protocol     | Allocation | Description                    |
+| ------------ | ---------- | ------------------------------ |
+| Init Capital | 30%        | Position-based lending         |
+| Compound V3  | 40%        | Direct supply/withdraw (Comet) |
+| Dolomite    | 30%        | Margin account lending         |
 
 ---
 
@@ -72,21 +82,21 @@ SuperCluster abstracts away the complexity of yield farming by:
 │                           Pilot.sol                                  │
 │  • receiveAndInvest()   • invest()    • divest()    • harvest()     │
 │  • setPilotStrategy()   • getTotalValue()   • withdrawToManager()   │
-└────────────┬───────────────────────────────────────┬────────────────┘
-             │                                       │
-             ▼                                       ▼
-┌────────────────────────┐              ┌────────────────────────────┐
-│    IonicAdapter.sol    │              │    MorphoAdapter.sol       │
-│  • deposit()           │              │  • deposit()               │
-│  • withdraw()          │              │  • withdraw()              │
-│  • getBalance()        │              │  • getBalance()            │
-│  • harvest()           │              │  • harvest()               │
-└────────────────────────┘              └────────────────────────────┘
-             │                                       │
-             ▼                                       ▼
-┌────────────────────────┐              ┌────────────────────────────┐
-│   MockIonic (Testnet)  │              │  MockMorpho (Testnet)      │
-└────────────────────────┘              └────────────────────────────┘
+└────────────┬─────────────────────┬─────────────────────┬────────────┘
+             │                     │                     │
+             ▼                     ▼                     ▼
+┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
+│   InitAdapter.sol  │  │ CompoundAdapter.sol│  │ DolomiteAdapter.sol│
+│  • deposit()       │  │  • deposit()       │  │  • deposit()       │
+│  • withdraw()      │  │  • withdraw()      │  │  • withdraw()      │
+│  • getBalance()    │  │  • getBalance()    │  │  • getBalance()    │
+└────────────────────┘  └────────────────────┘  └────────────────────┘
+             │                     │                     │
+             ▼                     ▼                     ▼
+┌────────────────────┐  ┌────────────────────┐  ┌────────────────────┐
+│  InitLendingPool   │  │  Comet (Mock)      │  │  DolomiteMargin    │
+│  (Mock)            │  │                    │  │  (Mock)            │
+└────────────────────┘  └────────────────────┘  └────────────────────┘
 ```
 
 ---
@@ -107,10 +117,6 @@ The main protocol entry point that orchestrates all operations.
 | `setWithdrawManager(manager)`         | Set withdrawal queue contract                      | Owner  |
 | `getPilots()`                         | Get all registered pilot addresses                 | View   |
 
-**Constructor Parameters:**
-
-- `underlyingToken_`: Base ERC20 token address (e.g., USDC)
-
 **Auto-deployed Contracts:**
 
 - `SToken` – Rebasing staking token (`s{TokenName}`)
@@ -130,31 +136,22 @@ Strategy controller that manages fund allocation across DeFi protocols.
 | `setPilotStrategy(adapters, allocations)` | Configure strategy allocation                   | Owner        |
 | `getTotalValue()`                         | Get total AUM (idle + invested)                 | View         |
 | `withdrawToManager(manager, amount)`      | Withdraw to WithdrawManager                     | SuperCluster |
-| `emergencyWithdraw()`                     | Emergency withdrawal to owner                   | Owner        |
 
-**Allocation Model:**
+**Default Allocation:**
 
-- Allocations are specified in basis points (10000 = 100%)
-- Example: `[6000, 4000]` = 60% Adapter A, 40% Adapter B
+- Init Capital: 30%
+- Compound V3: 40%  
+- Dolomite: 30%
 
-### Adapter.sol (Abstract Base)
+### Adapters
 
 Base contract for protocol integrations implementing `IAdapter`.
 
-| Function                  | Description                          |
-| ------------------------- | ------------------------------------ |
-| `deposit(amount)`         | Deposit to external protocol         |
-| `withdraw(shares)`        | Withdraw from external protocol      |
-| `withdrawTo(to, amount)`  | Withdraw directly to receiver        |
-| `getBalance()`            | Get current balance in protocol      |
-| `harvest()`               | Collect pending rewards              |
-| `convertToShares(assets)` | Convert asset amount to share amount |
-| `getTotalAssets()`        | Get total assets held by adapter     |
-
-**Implementations:**
-
-- `IonicAdapter.sol` – Integration with Ionic (Compound V2 fork) lending
-- `MorphoAdapter.sol` – Integration with Morpho lending markets
+| Adapter               | Protocol     | Description                              |
+| --------------------- | ------------ | ---------------------------------------- |
+| `InitAdapter.sol`     | Init Capital | Position-based lending with share system |
+| `CompoundAdapter.sol` | Compound V3  | Direct supply/withdraw (1:1 conversion)  |
+| `DolomiteAdapter.sol` | Dolomite     | Margin account system with market IDs    |
 
 ---
 
@@ -163,12 +160,6 @@ Base contract for protocol integrations implementing `IAdapter`.
 ### SToken (Rebasing)
 
 A Lido-style rebasing token representing user shares in the protocol.
-
-**Key Features:**
-
-- Uses shares model for efficient rebasing
-- User balances increase automatically as yield accrues
-- Formula: `balance = shares × scalingFactor / 1e18`
 
 ```solidity
 // User balance increases after rebase without any transaction
@@ -181,12 +172,6 @@ uint256 balanceAfter = sToken.balanceOf(user);  // 1010 sUSDC
 
 ERC20-compliant wrapped version for DeFi integrations.
 
-**Use Case:**
-
-- Compatible with AMMs, lending protocols, and other DeFi
-- Each wsToken represents an increasing amount of sToken
-- Similar to wstETH pattern
-
 ```solidity
 // Wrap sToken to wsToken
 sToken.approve(wsToken, amount);
@@ -195,23 +180,6 @@ wsToken.wrap(sTokenAmount);
 // Unwrap wsToken to sToken
 wsToken.unwrap(wsTokenAmount);
 ```
-
-### Withdrawal Flow
-
-The `Withdraw.sol` contract manages queued withdrawals:
-
-```
-User Request → Operator Finalize → User Claim
-     │              │                  │
-     ▼              ▼                  ▼
-  requestId     baseAmount          tokens
-```
-
-| State       | Description                              |
-| ----------- | ---------------------------------------- |
-| `requested` | User initiated withdrawal, sToken burned |
-| `finalized` | Operator confirmed funds available       |
-| `claimed`   | User received base tokens                |
 
 ---
 
@@ -229,14 +197,6 @@ superCluster.deposit(pilotAddress, baseToken, amount);
 // User receives: sToken (rebasing yield token)
 ```
 
-**Internal Flow:**
-
-1. SuperCluster transfers base token from user
-2. Mints equivalent sToken to user
-3. Approves pilot to spend base token
-4. Calls `pilot.receiveAndInvest(amount)`
-5. Pilot distributes to adapters based on allocation strategy
-
 ### Withdraw Flow
 
 ```solidity
@@ -248,30 +208,6 @@ superCluster.withdraw(pilotAddress, baseToken, amount);
 // 3. Claim funds
 withdrawManager.claim(requestId);
 ```
-
-**Internal Flow:**
-
-1. SuperCluster burns user's sToken
-2. Calls `pilot.withdrawToManager()` to unwind positions
-3. Creates withdrawal request via `withdrawManager.autoRequest()`
-4. Auto-finalizes the request
-5. User claims base tokens
-
-### Rebase Flow (Admin)
-
-```solidity
-// Calculate and distribute yield
-superCluster.rebase();
-```
-
-**Internal Flow:**
-
-1. `calculateTotalAUM()` aggregates:
-   - Base token balance in SuperCluster
-   - `getTotalValue()` from all registered pilots
-2. Computes yield = newAUM - currentSupply
-3. Updates sToken scaling factor
-4. All user balances automatically reflect new yield
 
 ---
 
@@ -297,67 +233,72 @@ forge install
 Create `.env` file:
 
 ```bash
+# Deployer private key
 PRIVATE_KEY=your_deployer_private_key
-LISK_SEPOLIA_RPC_URL=https://rpc.sepolia-api.lisk.com
 
-# After deploying Oracle & IRM
-MOCK_ORACLE=deployed_oracle_address
-MOCK_IRM=deployed_irm_address
+# Mantle Network RPC URLs
+MANTLE_RPC_URL=https://rpc.mantle.xyz
+MANTLE_SEPOLIA_RPC_URL=https://rpc.sepolia.mantle.xyz
+
+# Explorer API Key (optional, for verification)
+MANTLESCAN_API_KEY=your_api_key
 ```
 
 ### Foundry Configuration
 
-Your `foundry.toml` should include:
+The `foundry.toml` is pre-configured for Mantle:
 
 ```toml
-[profile.default]
-src = "src"
-out = "out"
-
 [rpc_endpoints]
-lisk-sepolia = "${LISK_SEPOLIA_RPC_URL}"
+mantle = "${MANTLE_RPC_URL}"
+mantle-sepolia = "${MANTLE_SEPOLIA_RPC_URL}"
 
 [etherscan]
-lisk-sepolia = {key = "empty", url = "https://sepolia-blockscout.lisk.com/api"}
+mantle = { key = "${MANTLESCAN_API_KEY}", url = "https://explorer.mantle.xyz/api", chain = 5000 }
+mantle-sepolia = { key = "${MANTLESCAN_API_KEY}", url = "https://explorer.sepolia.mantle.xyz/api", chain = 5003 }
 ```
 
-### Deployment Scripts
+### Deploy to Mantle
 
-**Step 1: Deploy Oracle & IRM (Testnet)**
+**Single Command Deployment:**
 
 ```bash
-forge script script/DeployOracleAndIRM.s.sol:DeployOracleAndIRM \
-  --rpc-url lisk-sepolia \
-  --broadcast \
-  --verify \
-  --verifier blockscout \
-  --verifier-url https://sepolia-blockscout.lisk.com/api \
-  -vvv
+# Deploy to Mantle Sepolia (Testnet)
+forge script script/SuperCluster.s.sol --rpc-url mantle-sepolia --broadcast --verify
+
+# Deploy to Mantle Mainnet
+forge script script/SuperCluster.s.sol --rpc-url mantle --broadcast --verify
 ```
 
-**Step 2: Deploy Full Protocol**
+The deployment script deploys all contracts in order:
 
-```bash
-forge script script/SuperCluster.s.sol:SuperClusterScript \
-  --rpc-url lisk-sepolia \
-  --broadcast \
-  --verify \
-  --verifier blockscout \
-  --verifier-url https://sepolia-blockscout.lisk.com/api \
-  -vvv
-```
-
-### Deployment Order
-
-1. `MockOracle` & `MockIrm` – Price feed and interest rate model
+1. `MockOracle` – Price feed
 2. `MockUSDC` – Base token (testnet)
-3. `SuperCluster` – Main protocol (auto-deploys SToken, WsToken, WithdrawManager)
-4. `LendingPool` (MockIonic) – Mock Ionic protocol
-5. `MockMorpho` – Mock Morpho protocol
-6. `IonicAdapter` – Ionic integration adapter
-7. `MorphoAdapter` – Morpho integration adapter
-8. `Pilot` – Strategy manager
-9. `Faucet` – Testnet token distribution
+3. `Faucet` – Token distribution
+4. `SuperCluster` – Main protocol (auto-deploys SToken, WsToken, WithdrawManager)
+5. `InitLendingPool` – Mock Init Capital
+6. `Comet` – Mock Compound V3
+7. `DolomiteMargin` – Mock Dolomite
+8. `InitAdapter`, `CompoundAdapter`, `DolomiteAdapter` – Protocol adapters
+9. `Pilot` – Strategy manager with 30/40/30 allocation
+
+---
+
+## Contract Addresses
+
+### Mantle Sepolia (Testnet)
+
+| Contract          | Address                                      |
+| ----------------- | -------------------------------------------- |
+| SuperCluster      | `0x07f5Ad7AcD80855fcE8645C3c37bA037A7a5C668` |
+| Pilot             | `0xDA5eDA6A07ec1BF0c0FB910E2DA32F011b4D5dff` |
+| MockUSDC          | `0x996D5d20b363A65c98df75325DED909387b9B3D9` |
+| Faucet            | `0xFe1a6E7daE9B878E4f51FeFD743D6FFf5Ac24fCE` |
+| sToken            | `0xBF402fC74064E44C366FCe9f6A790dB711FC7eA6` |
+| WithdrawManager   | `0x4023bD831FCB6beCdCB137cE7456ac08242EDFAd` |
+| wsToken           | `0x7eB42527c1848B6323111374C78A861C037dc8a2` |
+
+**Explorer:** [explorer.sepolia.mantle.xyz](https://explorer.sepolia.mantle.xyz)
 
 ---
 
@@ -372,25 +313,14 @@ forge build
 ### Test
 
 ```bash
+# Run all tests
 forge test
-```
 
-### Test with Verbosity
-
-```bash
+# With verbosity
 forge test -vvv
-```
 
-### Gas Report
-
-```bash
+# Gas report
 forge test --gas-report
-```
-
-### Format
-
-```bash
-forge fmt
 ```
 
 ### Local Development
@@ -400,9 +330,7 @@ forge fmt
 anvil
 
 # Deploy to local network
-forge script script/SuperCluster.s.sol:SuperClusterScript \
-  --rpc-url http://localhost:8545 \
-  --broadcast
+forge script script/SuperCluster.s.sol --rpc-url http://localhost:8545 --broadcast
 ```
 
 ---
@@ -410,24 +338,26 @@ forge script script/SuperCluster.s.sol:SuperClusterScript \
 ## Directory Structure
 
 ```
-sc-super-cluster/
+super-cluster-mantle/
 ├── src/
 │   ├── SuperCluster.sol          # Main protocol entry point
 │   ├── adapter/
 │   │   ├── Adapter.sol           # Abstract base adapter
-│   │   ├── IonicAdapter.sol      # Ionic (Compound V2 fork) integration
-│   │   └── MorphoAdapter.sol     # Morpho integration
+│   │   ├── InitAdapter.sol       # Init Capital integration
+│   │   ├── CompoundAdapter.sol   # Compound V3 integration
+│   │   └── DolomiteAdapter.sol   # Dolomite integration
 │   ├── interfaces/
 │   │   ├── IAdapter.sol          # Adapter interface
 │   │   ├── IPilot.sol            # Pilot interface
-│   │   ├── ISToken.sol           # SToken interface
-│   │   └── IMockMorpho.sol       # Morpho interface
+│   │   └── ISToken.sol           # SToken interface
 │   ├── mocks/
-│   │   ├── MockIonic.sol         # Mock Ionic LendingPool
-│   │   ├── MockMorpho.sol        # Mock Morpho protocol
+│   │   ├── MockInit.sol          # Mock Init Capital LendingPool
+│   │   ├── MockCompound.sol      # Mock Compound V3 (Comet)
+│   │   ├── MockDolomite.sol      # Mock Dolomite Margin
 │   │   ├── MockOracle.sol        # Mock price oracle
-│   │   ├── MockIrm.sol           # Mock interest rate model
 │   │   ├── Faucet.sol            # Testnet token faucet
+│   │   ├── interfaces/
+│   │   │   └── IOracle.sol       # Oracle interface
 │   │   └── tokens/
 │   │       └── MockUSDC.sol      # Mock USDC token
 │   ├── pilot/
@@ -437,7 +367,6 @@ sc-super-cluster/
 │       ├── WsToken.sol           # Wrapped non-rebasing token
 │       └── WithDraw.sol          # Withdrawal queue manager
 ├── script/
-│   ├── DeployOracleAndIRM.s.sol  # Oracle/IRM deployment
 │   └── SuperCluster.s.sol        # Full protocol deployment
 ├── test/
 │   ├── IntegrationTest.t.sol     # Integration tests
@@ -446,40 +375,6 @@ sc-super-cluster/
 ├── lib/                          # Dependencies (forge-std, OpenZeppelin)
 ├── broadcast/                    # Deployment artifacts
 └── foundry.toml                  # Foundry configuration
-```
-
----
-
-## Contract Interfaces
-
-### IAdapter
-
-```solidity
-interface IAdapter {
-    function deposit(uint256 amount) external returns (uint256 shares);
-    function withdraw(uint256 shares) external returns (uint256 amount);
-    function withdrawTo(address to, uint256 amount) external returns (uint256);
-    function getBalance() external view returns (uint256);
-    function getPendingRewards() external view returns (uint256);
-    function harvest() external returns (uint256);
-    function convertToShares(uint256 assets) external view returns (uint256);
-    function getTotalAssets() external view returns (uint256);
-    function isActive() external view returns (bool);
-}
-```
-
-### IPilot
-
-```solidity
-interface IPilot {
-    function invest(uint256 amount, address[] calldata adapters, uint256[] calldata allocations) external;
-    function divest(uint256 amount, address[] calldata adapters, uint256[] calldata allocations) external;
-    function harvest(address[] calldata adapters) external;
-    function receiveAndInvest(uint256 amount) external;
-    function withdrawToManager(address manager, uint256 amount) external;
-    function getTotalValue() external view returns (uint256);
-    function getStrategy() external view returns (address[] memory, uint256[] memory);
-}
 ```
 
 ---
@@ -516,8 +411,6 @@ interface IPilot {
 
 ### Adding a New Adapter
 
-1. Create adapter contract extending `Adapter.sol`:
-
 ```solidity
 contract NewProtocolAdapter is Adapter {
     constructor(address _token, address _protocol, string memory _name, string memory _strategy)
@@ -534,14 +427,11 @@ contract NewProtocolAdapter is Adapter {
     function getBalance() external view override returns (uint256) {
         // Return current balance in protocol
     }
+
+    function getTotalAssets() external view override returns (uint256) {
+        // Return total assets held
+    }
 }
-```
-
-2. Deploy and register with pilot:
-
-```solidity
-pilot.addAdapter(newAdapterAddress);
-pilot.setPilotStrategy(adapters, allocations);
 ```
 
 ### Creating a New Pilot Strategy
@@ -568,6 +458,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Links
 
 - **GitHub**: [super-cluster-finance/smart-contract](https://github.com/super-cluster-finance/smart-contract)
-- **Documentation**: [docs](https://super-cluster-lisk-docs.vercel.app/)
-- **Demo**: [demo](https://super-cluster-lisk.vercel.app/)
-- **Discord**: Coming soon
+- **Explorer (Mantle Sepolia)**: [explorer.sepolia.mantle.xyz](https://explorer.sepolia.mantle.xyz)
+- **Mantle Network**: [mantle.xyz](https://mantle.xyz)
